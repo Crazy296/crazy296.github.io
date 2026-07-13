@@ -58,6 +58,8 @@ function stateAt(over: Partial<GameState>): GameState {
     roundPoints: [0, 0],
     beasts: ["rooster", "dragon"],
     powerUsed: [false, false],
+    roundTurns: [],
+    rounds: [],
     roundStarter: 0,
     roundNumber: 1,
     ...over,
@@ -364,6 +366,61 @@ console.log("\nSeeding never deals an unplayable letter (rules-spec §6)");
     [...drawn].every((L) => dict.extensions(L).length > 0),
     true,
   );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 6b. The match transcript (what the RECAP is built from)
+// ════════════════════════════════════════════════════════════════════════════
+console.log("\nThe transcript records every turn, and loses no round");
+{
+  // The §4.1 trace again, this time watching what it WRITES DOWN.
+  let s = stateAt({ wordInPlay: "E", seed: "E", activePlayer: 0 });
+  s = applyMove(s, submit("ME"), dict);
+  s = applyMove(s, timeout, dict); // P2 whiffs, P1 paid 2
+  s = applyMove(s, submit("MEN"), dict);
+  s = applyMove(s, timeout, dict); // P2 whiffs, P1 paid 3
+  s = applyMove(s, timeout, dict); // P1 whiffs → double timeout, round over
+
+  const log = s.rounds.at(-1)!;
+  check("the round is archived", s.rounds.length, 1);
+  check("  every turn is in it", log.turns.length, 5);
+  check(
+    "  submits carry the word",
+    log.turns.filter((t) => t.kind === "submit").map((t) => t.word),
+    ["ME", "MEN"],
+  );
+  // The mover is P2; the player PAID is P1. A recap that assumes those are the
+  // same player credits every timeout to the wrong side.
+  check("  a timeout pays the ADDER, not the mover", log.turns[1], {
+    player: 1,
+    kind: "timeout",
+    word: "ME",
+    paid: { player: 0, points: 2 },
+  });
+  check("  the round-ending timeout paid nobody", log.turns[4].paid, undefined);
+  check("  and the round's total is on the log", log.roundPoints, [5, 0]);
+}
+{
+  // A10: a mid-round timeout payout crosses 100, so the match ends and the round
+  // NEVER DOES. That round still has to reach the transcript, or the recap simply
+  // loses the turns that won the match.
+  let s = stateAt({
+    wordInPlay: "MEN",
+    adder: 0,
+    activePlayer: 1,
+    scores: [98, 0],
+  });
+  s = applyMove(s, timeout, dict);
+
+  check("mid-round timeout wins the match", s.phase, "MATCH_END");
+  check("  the unfinished round is STILL archived", s.rounds.length, 1);
+  check(
+    "  ...with no result, because it never ended",
+    s.rounds[0].result,
+    undefined,
+  );
+  check("  ...but its turns are there", s.rounds[0].turns.length, 1);
+  check("  ...and its points are there", s.rounds[0].roundPoints, [3, 0]);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

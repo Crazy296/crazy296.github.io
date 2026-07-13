@@ -34,6 +34,37 @@ export type RoundEndReason =
   /** A timeout on an already-claimed word. Nobody scores. See rules-spec §4. */
   | "double_timeout";
 
+/**
+ * One turn, as it happened. The match transcript is built from these.
+ *
+ * `player` is who MOVED, which on a timeout is not who got paid: a timeout pays the
+ * *adder* (rules-spec §4), i.e. the other player. That's why `paid` names its own
+ * player rather than being assumed to be `player`.
+ */
+export interface TurnEntry {
+  player: PlayerId;
+  kind: "submit" | "timeout";
+  /** submit: the word played. timeout: the word left standing on the board. */
+  word: string;
+  /** A mid-round timeout payout. Absent when the timeout paid nobody. */
+  paid?: { player: PlayerId; points: number };
+}
+
+/** A round, start to finish. Archived into `GameState.rounds` when it ends. */
+export interface RoundLog {
+  roundNumber: number;
+  seed: string;
+  turns: TurnEntry[];
+  finalWord: string;
+  roundPoints: [number, number];
+  /**
+   * Absent when the match ended MID-round — a timeout payout can cross 100 and end
+   * the match without the round ever ending (A10). The round still gets archived,
+   * because it still happened; it just has no result.
+   */
+  result?: RoundResult;
+}
+
 export interface RoundResult {
   reason: RoundEndReason;
   finalWord: string;
@@ -104,6 +135,11 @@ export interface GameState {
   beasts: [BeastId, BeastId];
   /** Once per ROUND, not per match. Resets on a new seed. */
   powerUsed: [boolean, boolean];
+
+  /** Turns played in the CURRENT round, in order. Resets on a new seed. */
+  roundTurns: TurnEntry[];
+  /** Every round that has finished. The match transcript. */
+  rounds: RoundLog[];
 
   /** Alternates every round. */
   roundStarter: PlayerId;

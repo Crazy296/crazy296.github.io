@@ -11,6 +11,7 @@ import { Container, Graphics } from "pixi.js";
 import type { GameState, RoundResult } from "../../../game/types";
 import { Button } from "../../ui/Button";
 import { Label } from "../../ui/Label";
+import { buildRecap, type RecapOptions } from "./recap";
 import { formatWordList } from "./wordList";
 
 const ROUND_END_MS = 2600;
@@ -25,10 +26,13 @@ export class EndOverlay extends Container {
   private readonly missed: Label;
   private readonly hint: Label;
   private readonly button: Button;
+  private readonly recapButton: Button;
 
   private readonly body = new Container();
   private resolve: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** Built once when the match ends; the button just copies it. */
+  private recap = "";
 
   constructor() {
     super();
@@ -71,10 +75,15 @@ export class EndOverlay extends Container {
     });
     this.hint.y = 150;
 
-    this.button = new Button({ text: "BACK TO TITLE", width: 300, height: 90 });
-    this.button.y = 170;
+    this.button = new Button({ text: "BACK TO TITLE", width: 280, height: 90 });
+    this.button.position.set(150, 170);
     this.button.visible = false;
     this.button.onPress.connect(() => this.finish());
+
+    this.recapButton = new Button({ text: "RECAP", width: 280, height: 90 });
+    this.recapButton.position.set(-150, 170);
+    this.recapButton.visible = false;
+    this.recapButton.onPress.connect(() => void this.copyRecap());
 
     this.body.addChild(
       this.headline,
@@ -82,6 +91,7 @@ export class EndOverlay extends Container {
       this.detail,
       this.missed,
       this.hint,
+      this.recapButton,
       this.button,
     );
     this.addChild(this.dim, this.body);
@@ -159,7 +169,8 @@ export class EndOverlay extends Container {
   }
 
   /** First to 100. */
-  showMatch(state: GameState, names: readonly [string, string]): Promise<void> {
+  showMatch(state: GameState, recapOpts: RecapOptions): Promise<void> {
+    const { names } = recapOpts;
     const winner = state.winner ?? 0;
 
     this.headline.text = "MATCH OVER";
@@ -169,10 +180,31 @@ export class EndOverlay extends Container {
     this.missed.visible = false;
     this.layoutBelowMissed();
 
+    this.recap = buildRecap(state, recapOpts);
+    this.recapButton.text = "RECAP";
+    this.recapButton.visible = true;
+
     this.hint.visible = false;
     this.button.visible = true;
 
     return this.open(null);
+  }
+
+  /**
+   * Copy the transcript to the clipboard.
+   *
+   * `navigator.clipboard` needs a secure context and a user gesture. The gesture is
+   * this button; the secure context is localhost or the https Pages site, so it
+   * works where the game actually runs. It can still be denied, and if it is, the
+   * button says so rather than claiming a copy that never happened.
+   */
+  private async copyRecap(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.recap);
+      this.recapButton.text = "COPIED";
+    } catch {
+      this.recapButton.text = "COPY BLOCKED";
+    }
   }
 
   /** Enter / Space, forwarded from the screen's keyboard handler. */

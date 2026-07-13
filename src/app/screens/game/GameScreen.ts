@@ -104,6 +104,8 @@ export class GameScreen extends Container {
   private dict!: Dictionary;
   private rng!: Rng;
   private state!: GameState;
+  private matchSubtitle = "";
+  private matchSeed = 0;
   private opponents!: [Opponent, Opponent];
   private human!: HumanOpponent;
 
@@ -217,6 +219,11 @@ export class GameScreen extends Container {
     ];
     this.difficultyBadge.text = `${difficulty.label} AI`;
 
+    // Carried to the recap: "the AI is unbeatable" is a useless bug report without
+    // which AI, and the seed is what makes the match replayable.
+    this.matchSubtitle = `${difficulty.label} AI · ${getBeast(setup.beasts[0]).name} vs ${getBeast(setup.beasts[1]).name}`;
+    this.matchSeed = setup.seed;
+
     this.state = createMatch(setup.beasts, this.dict, this.rng);
 
     if (this.beastViews) {
@@ -308,7 +315,11 @@ export class GameScreen extends Container {
           );
         }
         if (this.stopped) return;
-        await this.overlay.showMatch(this.state, NAMES);
+        await this.overlay.showMatch(this.state, {
+          names: NAMES,
+          subtitle: this.matchSubtitle,
+          seed: this.matchSeed,
+        });
         if (this.stopped) return;
 
         // Imported here rather than at the top: Title → CharacterSelect → Game →

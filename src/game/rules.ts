@@ -23,7 +23,9 @@ import {
   type Move,
   type PlayerId,
   type PowerActivation,
+  type RoundLog,
   type RoundResult,
+  type TurnEntry,
 } from "./types.ts";
 
 export const TARGET_SCORE = 100;
@@ -75,6 +77,8 @@ export function createMatch(
       roundPoints: [0, 0],
       beasts,
       powerUsed: [false, false],
+      roundTurns: [],
+      rounds: [],
       roundStarter: starter,
       roundNumber: 1,
     },
@@ -101,6 +105,7 @@ export function nextRound(
       activePlayer: starter,
       roundPoints: [0, 0], // like powerUsed: per ROUND, not per match
       powerUsed: [false, false], // once per ROUND
+      roundTurns: [], // the fresh round's transcript; `rounds` keeps the old ones
       roundStarter: starter,
       roundNumber: state.roundNumber + 1,
       lastRound: undefined,
@@ -143,6 +148,23 @@ function award(
   return { scores, roundPoints };
 }
 
+/** Append a turn to the current round's transcript. */
+function record(state: GameState, entry: TurnEntry): GameState {
+  return { ...state, roundTurns: [...state.roundTurns, entry] };
+}
+
+/** Freeze the current round into the match transcript. */
+function archive(state: GameState, result?: RoundResult): RoundLog {
+  return {
+    roundNumber: state.roundNumber,
+    seed: state.seed,
+    turns: state.roundTurns,
+    finalWord: state.wordInPlay,
+    roundPoints: [...state.roundPoints],
+    result,
+  };
+}
+
 function endRound(
   state: GameState,
   reason: "dead_end" | "double_timeout",
@@ -177,12 +199,20 @@ function endRound(
     };
   }
 
-  return withWinCheck({
+  const ended: GameState = {
     ...state,
     phase: "ROUND_END",
     scores,
     roundPoints,
     lastRound: result,
+  };
+
+  // Archived here, where the round is complete and its result is known. The only
+  // round that does NOT come through here is one cut short by the match ending
+  // mid-round — withWinCheck archives that one.
+  return withWinCheck({
+    ...ended,
+    rounds: [...state.rounds, archive(ended, result)],
   });
 }
 
@@ -197,7 +227,16 @@ function withWinCheck(state: GameState): GameState {
   const [a, b] = state.scores;
   if (a < TARGET_SCORE && b < TARGET_SCORE) return state;
   const winner: PlayerId = a >= b ? 0 : 1;
-  return { ...state, phase: "MATCH_END", winner };
+
+  // A round that ended already archived itself. A match won by a MID-round timeout
+  // payout leaves a round that never ends (A10) — archive it here, with no result,
+  // or those turns vanish from the transcript.
+  const rounds =
+    state.phase === "ROUND_END"
+      ? state.rounds
+      : [...state.rounds, archive(state)];
+
+  return { ...state, phase: "MATCH_END", winner, rounds };
 }
 
 // ── The reducer ─────────────────────────────────────────────────────────────
@@ -223,8 +262,18 @@ export function applyMove(
  * nothing.
  */
 function applyTimeout(state: GameState, dict: Dictionary): GameState {
+  const timedOut = (paid?: TurnEntry["paid"]): GameState =>
+    record(state, {
+      player: state.activePlayer,
+      kind: "timeout",
+      word: state.wordInPlay,
+      paid,
+    });
+
   // Second timeout in a row, no letter added between. Round over, nobody paid.
-  if (state.claimed) return endRound(state, "double_timeout");
+  // Recorded first — the move that ends the round is still a move, and endRound
+  // archives whatever transcript it is handed.
+  if (state.claimed) return endRound(timedOut(), "double_timeout");
 
   // Nobody has opened the round yet, so there is no adder to pay. Nobody scores;
   // the turn passes and the seed stands (rules-spec §4, the `adder == null` case).
@@ -235,7 +284,7 @@ function applyTimeout(state: GameState, dict: Dictionary): GameState {
   // the round instead of looping forever on a seed neither player will open.
   if (state.adder === null) {
     return {
-      ...state,
+      ...timedOut(),
       claimed: true,
       activePlayer: other(state.activePlayer),
     };
@@ -247,7 +296,7 @@ function applyTimeout(state: GameState, dict: Dictionary): GameState {
   return withWinCheck(
     resolveTurnStart(
       {
-        ...state,
+        ...timedOut({ player: state.adder, points }),
         scores,
         roundPoints,
         claimed: true,
@@ -301,7 +350,7 @@ function applySubmit(
   // A fresh letter makes the word claimable again.
   return resolveTurnStart(
     {
-      ...state,
+      ...record(state, { player, kind: "submit", word }),
       wordInPlay: word,
       adder: player,
       claimed: false,
