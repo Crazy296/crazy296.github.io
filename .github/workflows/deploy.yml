@@ -1,0 +1,69 @@
+# Build Spelling Beasts and publish it to GitHub Pages.
+#
+# WHY THIS EXISTS, rather than just committing dist/ and deploying "from a branch":
+# Pages can only serve a branch's ROOT or its /docs folder — it cannot be pointed at
+# dist/. Our root holds the *source* index.html (which loads /src/main.ts, a
+# TypeScript module no browser can execute) and /docs holds the design docs. Deploy
+# from a branch and you ship a blank page. So we build here and upload dist/ as the
+# artifact Pages actually serves.
+#
+# ONE-TIME SETUP: repo Settings → Pages → Build and deployment → Source =
+# **GitHub Actions**. Without that, this workflow runs green and nothing goes live.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  # Lets you re-publish from the Actions tab without pushing a commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race. Don't cancel one mid-flight — a half-published site is
+# worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `npm run build` = build:dict → lint → tsc → vite build.
+      #
+      # build:dict regenerates public/dict.txt and public/vocab.txt from the
+      # committed data/ files. They're gitignored, so this step is not optional —
+      # without it the site loads and then dies at the load screen.
+      #
+      # lint and typecheck run here too: a deploy is a bad place to find out the
+      # build is broken, but it is much better than the players finding out.
+      - run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
