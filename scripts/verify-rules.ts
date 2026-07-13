@@ -55,6 +55,7 @@ function stateAt(over: Partial<GameState>): GameState {
     claimed: false,
     activePlayer: 0,
     scores: [0, 0],
+    roundPoints: [0, 0],
     beasts: ["rooster", "dragon"],
     powerUsed: [false, false],
     roundStarter: 0,
@@ -118,6 +119,11 @@ console.log("       event            word  adder claimed  scores    next");
   check("  reason", s.lastRound?.reason, "double_timeout");
   check("  scorer", s.lastRound?.scorer, null);
 
+  // The round-ENDING event paid nobody — but P1 banked 2 and then 3 on the way
+  // here, and the round-end screen has to say so. Reporting only `scorer`/`points`
+  // showed "nobody scores" on a round P1 took 5 from.
+  check("  ...but the ROUND paid P1 five", s.lastRound?.roundPoints, [5, 0]);
+
   // This is the whole point of `claimed`.
   console.log(
     "\n       Without `claimed`, P1 would be paid 3 twice, and a player who simply\n" +
@@ -140,7 +146,18 @@ console.log(
   check("  P1 scores IMMEDIATELY, 6 points", s.scores, [6, 0]);
   check("  ...not waiting out P2's clock", s.lastRound?.reason, "dead_end");
   check("  the pot is the word's length", s.lastRound?.points, 6);
+  check(
+    "  no timeouts, so the round total IS the pot",
+    s.lastRound?.roundPoints,
+    [6, 0],
+  );
   check("  FIXITY really is a dead end", dict.isDeadEnd("FIXITY"), true);
+
+  // Per ROUND, like powerUsed — a fresh seed starts both players back at zero,
+  // while `scores` (the match total) carries the 6 forward.
+  const next = nextRound(s, dict, makeRng(7));
+  check("  next round resets the tally", next.roundPoints, [0, 0]);
+  check("  ...but the match score carries", next.scores, [6, 0]);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

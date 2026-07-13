@@ -37,9 +37,18 @@ export type RoundEndReason =
 export interface RoundResult {
   reason: RoundEndReason;
   finalWord: string;
-  /** null when nobody scored — a double timeout, or a bare seed nobody opened. */
+  /**
+   * The player paid by the round-ENDING event, and what it paid.
+   *
+   * This is NOT the round's total — timeouts pay out mid-round (§4), so a player
+   * can bank points in a round that then ends on a double timeout paying nothing.
+   * `scorer` is null exactly then, and on a bare seed nobody opened. For "what did
+   * this round actually earn me", use `roundPoints`.
+   */
   scorer: PlayerId | null;
   points: number;
+  /** Everything each player earned this round, mid-round timeout payouts included. */
+  roundPoints: [number, number];
 }
 
 /**
@@ -83,6 +92,14 @@ export interface GameState {
 
   activePlayer: PlayerId;
   scores: [number, number];
+  /**
+   * Points earned in the CURRENT round only. Resets on a new seed.
+   *
+   * Derived state, kept because it cannot be reconstructed at round end: a timeout
+   * pays the adder immediately (§4) and the round then rolls on, so by the time the
+   * round ends those points are indistinguishable from the rest of `scores`.
+   */
+  roundPoints: [number, number];
 
   beasts: [BeastId, BeastId];
   /** Once per ROUND, not per match. Resets on a new seed. */

@@ -72,6 +72,7 @@ export function createMatch(
       claimed: false,
       activePlayer: starter,
       scores: [0, 0],
+      roundPoints: [0, 0],
       beasts,
       powerUsed: [false, false],
       roundStarter: starter,
@@ -98,6 +99,7 @@ export function nextRound(
       adder: null,
       claimed: false,
       activePlayer: starter,
+      roundPoints: [0, 0], // like powerUsed: per ROUND, not per match
       powerUsed: [false, false], // once per ROUND
       roundStarter: starter,
       roundNumber: state.roundNumber + 1,
@@ -128,41 +130,50 @@ export function scoreFor(word: string): number {
   return word.length;
 }
 
+/** Pays `player`, both on the match scoreboard and on the round's running tally. */
 function award(
   state: GameState,
   player: PlayerId,
   points: number,
-): GameState["scores"] {
+): Pick<GameState, "scores" | "roundPoints"> {
   const scores: [number, number] = [...state.scores];
+  const roundPoints: [number, number] = [...state.roundPoints];
   scores[player] += points;
-  return scores;
+  roundPoints[player] += points;
+  return { scores, roundPoints };
 }
 
 function endRound(
   state: GameState,
   reason: "dead_end" | "double_timeout",
 ): GameState {
-  let scores = state.scores;
+  let { scores, roundPoints } = state;
   let result: RoundResult;
 
   if (reason === "dead_end" && state.adder !== null) {
     const points = scoreFor(state.wordInPlay);
-    scores = award(state, state.adder, points);
+    ({ scores, roundPoints } = award(state, state.adder, points));
     result = {
       reason,
       finalWord: state.wordInPlay,
       scorer: state.adder,
       points,
+      roundPoints: [...roundPoints],
     };
   } else {
     // Either a double timeout (already paid on the first one), or a dead-end seed
     // nobody ever opened — which seeding makes impossible (rules-spec §6), but the
     // engine must not assume the dictionary is well-behaved.
+    //
+    // The round-ending event pays nothing — but earlier timeouts in this round may
+    // well have, so `roundPoints` is not necessarily [0, 0] here. That distinction
+    // is the whole reason it exists.
     result = {
       reason,
       finalWord: state.wordInPlay,
       scorer: null,
       points: 0,
+      roundPoints: [...roundPoints],
     };
   }
 
@@ -170,6 +181,7 @@ function endRound(
     ...state,
     phase: "ROUND_END",
     scores,
+    roundPoints,
     lastRound: result,
   });
 }
@@ -230,13 +242,14 @@ function applyTimeout(state: GameState, dict: Dictionary): GameState {
   }
 
   const points = scoreFor(state.wordInPlay);
-  const scores = award(state, state.adder, points);
+  const { scores, roundPoints } = award(state, state.adder, points);
 
   return withWinCheck(
     resolveTurnStart(
       {
         ...state,
         scores,
+        roundPoints,
         claimed: true,
         // The turn passes to the player who just scored — they must extend their
         // own word. This is what makes stalling self-harming rather than

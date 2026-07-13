@@ -301,7 +301,11 @@ export class GameScreen extends Container {
         // A dead end that crosses 100 ends the round AND the match in one move —
         // the round still deserves its beat before the match end lands. (A10)
         if (this.state.lastRound) {
-          await this.overlay.showRound(this.state.lastRound, NAMES);
+          await this.overlay.showRound(
+            this.state.lastRound,
+            NAMES,
+            this.dict.extensions(this.state.lastRound.finalWord),
+          );
         }
         if (this.stopped) return;
         await this.overlay.showMatch(this.state, NAMES);
@@ -315,7 +319,12 @@ export class GameScreen extends Container {
       }
 
       if (this.state.phase === "ROUND_END") {
-        await this.overlay.showRound(this.state.lastRound!, NAMES);
+        const round = this.state.lastRound!;
+        await this.overlay.showRound(
+          round,
+          NAMES,
+          this.dict.extensions(round.finalWord),
+        );
         if (this.stopped) return;
         this.state = nextRound(this.state, this.dict, this.rng);
         this.sync(false); // fresh seed — the counter has nothing to fall from

@@ -131,6 +131,12 @@ A round ends when either:
 - **Double timeout** (§4): a timeout on an already-claimed word.
   → Nobody scores. The points were already paid on the first timeout.
 
+> **"Nobody scores" describes the round-ending *event*, not the round.** Timeouts pay out mid-round, so
+> a round that ends on a double timeout may still have paid a player 2, then 3 — the §4.1 trace is
+> exactly that, and P1 walks away with 5. The round summary reports the **round total per player**
+> (`GameState.roundPoints`, carried on `RoundResult.roundPoints`), which is what a player means when they
+> ask what a round was worth. It reads "nobody scores" only when the round genuinely paid nothing.
+
 Then:
 1. Show the round summary (final word, who scored, running totals).
 2. Start a new round (§2), with the *other* player starting.
